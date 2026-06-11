@@ -681,25 +681,146 @@ Papa.parse(CSV_URL, {
     rawData = results.data.slice(dataStart).map(row => {
       const obj={}; headers.forEach((h,i)=>{ obj[h]=row[i]||''; }); return obj;
     }).filter(r => r['#'] && r['#']!=='#');
-    // ── DASHBOARD PERSONAL: solo registros de este médico ──
+    // -- DASHBOARD PERSONAL: solo registros de este médico --
     const MEDICO_LOCK_SALAS = new Set(["DR. FRANCISCO SOTO - TRAUMATOLOGIA"]);
-    rawData = rawData.filter(r => MEDICO_LOCK_SALAS.has((r['SALA']||'').trim()));
+    window._allData    = rawData;
+    window._META_DERIV = 15;
+    window._MIS_NOMBRES = new Set(["FRANCISCO SOTO"]);
+    rawData = rawData.filter(function(r){ return MEDICO_LOCK_SALAS.has((r['SALA']||"").trim()); });
 
     buildPatientHistory();
     populateFilters();
     buildMedicosSubtabs();
     buildKineSubtabs();
-    // ── DASHBOARD PERSONAL: vista bloqueada ──
     activeTab = 'medicos';
-    TABS.medicos.espKey     = 'EXAMEN';
-    TABS.medicos.espTitle   = '🩺 Prestaciones realizadas';
+    TABS.medicos.espKey      = 'EXAMEN';
+    TABS.medicos.espTitle    = '🩺 Prestaciones realizadas';
     TABS.medicos.tablaKey   = 'SALA';
-    TABS.medicos.tablaTitle = '👨‍⚕️ Producción por sala';
+    TABS.medicos.tablaTitle = '📋 Producción por sala';
     TABS.medicos.tablaNombre= 'Sala';
     document.querySelector('.tabs-wrap').style.display = 'none';
     document.querySelector('header .header-titles p').textContent = "Dr. Francisco Soto — Actividad personal CEMTRA";
     document.title = "CEMTRA — Dr. Francisco Soto";
+    (function(){ var st=document.createElement('style'); st.textContent="#card-mis-derivaciones{margin-top:20px}.dr-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;margin:3px 0}.dr-label{min-width:150px;font-size:.85rem;font-weight:600;color:#2d3748}.dr-n{min-width:75px;font-size:.82rem;color:#718096;text-align:right}.dr-bar-wrap{flex:1;position:relative;height:18px;background:#edf2f7;border-radius:9px;overflow:visible;min-width:80px}.dr-bar{position:absolute;left:0;top:0;height:100%;border-radius:9px;transition:width .5s ease}.dr-goal-line{position:absolute;top:-4px;bottom:-4px;width:2px;background:#c53030;border-radius:1px;transform:translateX(-50%)}.dr-goal-label{position:absolute;top:-18px;font-size:.68rem;font-weight:700;color:#c53030;transform:translateX(-50%);white-space:nowrap}.dr-pct{min-width:46px;font-size:.84rem;font-weight:700;text-align:right}.dr-check{font-size:.9rem;min-width:22px;text-align:center}"; document.head.appendChild(st); })();
+    (function(){
+      var card = document.createElement('div');
+      card.className = 'card'; card.id = 'card-mis-derivaciones';
+      card.innerHTML =
+        '<div class="card-header" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">'
+        + '<span class="card-title">📤 Mis Derivaciones a otros servicios</span>'
+        + '<span id="deriv-meta-total" style="font-size:.78rem;color:#718096;font-weight:600"></span></div>'
+        + '<div style="font-size:.78rem;color:#a0aec0;margin-bottom:14px">Meta: derivar al menos el '
+        + '<strong style="color:#c53030">15%</strong> de mis pacientes a cada servicio.'
+        + ' La línea roja marca el objetivo.</div>'
+        + '<div id="deriv-meta-body"></div>';
+      document.querySelector('.container').appendChild(card);
+    })();
+
+    // ── DESTINOS A MEDIR ────────────────────────────────────────────────────
+    var _DESTINOS = [
+      {icon:'🦵', label:'Kinesiología',   fn:function(r){return isSalaKine(r);}},
+      {icon:'🩺', label:'Procedimientos', fn:function(r){return (r['SALA']||'').toUpperCase()==='SALA DE PROCEDIMIENTOS';}},
+      {icon:'🔬', label:'Imagenología',   fn:function(r){return sala(r,'IMAGENOLOGIA');}},
+      {icon:'🪨', label:'Sala de Yeso',  fn:function(r){return sala(r,'YESO');}},
+      {icon:'🔊', label:'Eco',            fn:function(r){return isEco(r);}},
+      {icon:'☢️', label:'Rayos X',        fn:function(r){return sala(r,'RAYOS');}},
+      {icon:'🦿', label:'Ortesis',        fn:function(r){return sala(r,'ORTESIS');}},
+      {icon:'🖐', label:'T. Ocupacional', fn:function(r){return isTO(r);}},
+      {icon:'🥗', label:'Nutricionistas', fn:function(r){return sala(r,'NUTRICIONISTA');}},
+    ];
+    var _VENTANA_DR = 60 * 24 * 60 * 60 * 1000; // 60 días
+
+    function _getMisPacientes() {
+      var anio = document.getElementById('f-anio').value;
+      var mesV = document.getElementById('f-mes').value;
+      var diaV = document.getElementById('f-dia').value;
+      var pago = document.getElementById('f-pago').value;
+      var pac  = new Set();
+      rawData.forEach(function(r) {
+        if (anio && getAnio(r['FECHA']) !== anio) return;
+        if (mesV !== '' && getMesNum(r['FECHA']) !== parseInt(mesV)) return;
+        if (diaV !== '' && getDia(r['FECHA'])    !== parseInt(diaV)) return;
+        if (pago && r['TIPO PAGO'] !== pago) return;
+        var pid = (r['RUT']||'').trim(); if (pid) pac.add(pid);
+      });
+      return pac;
+    }
+
+    function _getMiHistorial() {
+      var hist = {};
+      rawData.forEach(function(r) {
+        var pid = (r['RUT']||'').trim(); if (!pid) return;
+        var f   = parseFecha(r['FECHA']); if (!f)  return;
+        if (!hist[pid]) hist[pid] = [];
+        hist[pid].push(f.getTime());
+      });
+      return hist;
+    }
+
+    function renderMisDerivaciones() {
+      var body = document.getElementById('deriv-meta-body');
+      var lbl  = document.getElementById('deriv-meta-total');
+      if (!body) return;
+
+      var misPac = _getMisPacientes();
+      var total  = misPac.size;
+      if (total === 0) {
+        if (lbl) lbl.textContent = '';
+        body.innerHTML = '<p style="color:#a0aec0;padding:16px;text-align:center">Sin datos para el período seleccionado</p>';
+        return;
+      }
+      if (lbl) lbl.textContent = fmtN(total) + ' pacientes únicos atendidos';
+
+      var miHist = _getMiHistorial();
+      var metaPct = window._META_DERIV;
+
+      var rows = _DESTINOS.map(function(dest) {
+        var derivPac = new Set();
+        window._allData.forEach(function(r) {
+          if (!dest.fn(r)) return;
+          var pid = (r['RUT']||'').trim();
+          if (!pid || !misPac.has(pid)) return;
+          // Método 1: DERIVADOR directo
+          var deriv = (r['DERIVADOR']||'').trim().toUpperCase();
+          if (deriv && window._MIS_NOMBRES.has(deriv)) { derivPac.add(pid); return; }
+          // Método 2: cruce 60 días
+          var fd = parseFecha(r['FECHA']); if (!fd) return;
+          var destMs = fd.getTime();
+          var vis = miHist[pid];
+          if (vis && vis.some(function(v){ return v <= destMs && v >= destMs - _VENTANA_DR; }))
+            derivPac.add(pid);
+        });
+        var n   = derivPac.size;
+        var pct = parseFloat((n / total * 100).toFixed(1));
+        return {icon:dest.icon, label:dest.label, n:n, pct:pct};
+      });
+
+      body.innerHTML = rows.map(function(d) {
+        var barPct    = Math.min(d.pct, 100);
+        var alcanzado = d.pct >= metaPct;
+        var color     = alcanzado ? '#38a169' : d.pct >= metaPct * 0.67 ? '#dd6b20' : '#e53e3e';
+        var bg        = alcanzado ? 'rgba(56,161,105,.08)' : d.pct >= metaPct * 0.67 ? 'rgba(221,107,32,.07)' : 'rgba(229,62,62,.06)';
+        return '<div class="dr-row" style="background:' + bg + '">'
+          + '<div class="dr-label">' + d.icon + ' ' + d.label + '</div>'
+          + '<div class="dr-n">' + fmtN(d.n) + ' pac.</div>'
+          + '<div class="dr-bar-wrap">'
+          +   '<div class="dr-bar" style="width:' + barPct + '%;background:' + color + '"></div>'
+          +   '<div class="dr-goal-line" style="left:' + metaPct + '%"></div>'
+          +   '<span class="dr-goal-label" style="left:' + metaPct + '%">' + metaPct + '%</span>'
+          + '</div>'
+          + '<div class="dr-pct" style="color:' + color + '">' + d.pct.toFixed(1) + '%</div>'
+          + '<div class="dr-check">' + (alcanzado ? '✅' : '⬜') + '</div>'
+          + '</div>';
+      }).join('');
+    }
+
+    // Actualizar en cada cambio de filtro
+    ['f-anio','f-mes','f-dia','f-pago'].forEach(function(id) {
+      document.getElementById(id).addEventListener('change', renderMisDerivaciones);
+    });
+
     render();
+    renderMisDerivaciones();
     document.getElementById('loading').style.display='none';
     document.getElementById('app').style.display='block';
     document.getElementById('last-update').textContent =
