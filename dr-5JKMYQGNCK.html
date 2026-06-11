@@ -701,7 +701,7 @@ Papa.parse(CSV_URL, {
     document.querySelector('.tabs-wrap').style.display = 'none';
     document.querySelector('header .header-titles p').textContent = "Dra. Kelly Rodriguez — Actividad personal CEMTRA";
     document.title = "CEMTRA — Dra. Kelly Rodriguez";
-    (function(){ var st=document.createElement('style'); st.textContent="#card-mis-derivaciones{margin-top:20px}.dr-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;margin:3px 0}.dr-label{min-width:150px;font-size:.85rem;font-weight:600;color:#2d3748}.dr-n{min-width:75px;font-size:.82rem;color:#718096;text-align:right}.dr-bar-wrap{flex:1;position:relative;height:18px;background:#edf2f7;border-radius:9px;overflow:visible;min-width:80px}.dr-bar{position:absolute;left:0;top:0;height:100%;border-radius:9px;transition:width .5s ease}.dr-goal-line{position:absolute;top:-4px;bottom:-4px;width:2px;background:#c53030;border-radius:1px;transform:translateX(-50%)}.dr-goal-label{position:absolute;top:-18px;font-size:.68rem;font-weight:700;color:#c53030;transform:translateX(-50%);white-space:nowrap}.dr-pct{min-width:46px;font-size:.84rem;font-weight:700;text-align:right}.dr-check{font-size:.9rem;min-width:22px;text-align:center}"; document.head.appendChild(st); })();
+    (function(){ var st=document.createElement('style'); st.textContent="#card-mis-derivaciones{margin-top:20px}.dr-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;margin:3px 0}.dr-label{min-width:150px;font-size:.85rem;font-weight:600;color:#2d3748}.dr-n{min-width:75px;font-size:.82rem;color:#718096;text-align:right}.dr-bar-wrap{flex:1;position:relative;height:18px;background:#edf2f7;border-radius:9px;overflow:visible;min-width:80px}.dr-bar{position:absolute;left:0;top:0;height:100%;border-radius:9px;transition:width .5s ease}.dr-goal-line{position:absolute;top:-4px;bottom:-4px;width:2px;background:#c53030;border-radius:1px;transform:translateX(-50%)}.dr-goal-label{position:absolute;top:-18px;font-size:.68rem;font-weight:700;color:#c53030;transform:translateX(-50%);white-space:nowrap}.dr-pct{min-width:46px;font-size:.84rem;font-weight:700;text-align:right}.dr-check{font-size:.9rem;min-width:22px;text-align:center}#card-desglose{margin-top:20px}.ds-grupo{margin-bottom:14px;background:#f7fafc;border-radius:10px;padding:12px 14px}.ds-ghdr{font-size:.87rem;color:#2d3748;margin-bottom:10px;display:flex;align-items:center;gap:8px}.ds-gtotal{font-size:.78rem;color:#718096;font-weight:normal;margin-left:auto}.ds-row{display:flex;align-items:center;gap:10px;padding:4px 0}.ds-nombre{min-width:165px;font-size:.82rem;color:#4a5568}.ds-cnt{min-width:62px;font-size:.8rem;color:#718096;text-align:right}.ds-bwrap{flex:1;height:13px;background:#e2e8f0;border-radius:7px;overflow:hidden}.ds-bbar{height:100%;background:#2b6cb0;border-radius:7px;transition:width .4s ease}"; document.head.appendChild(st); })();
     (function(){
       var card = document.createElement('div');
       card.className = 'card'; card.id = 'card-mis-derivaciones';
@@ -714,6 +714,16 @@ Papa.parse(CSV_URL, {
         + ' La línea roja marca el objetivo.</div>'
         + '<div id="deriv-meta-body"></div>';
       document.querySelector('.container').appendChild(card);
+    })();
+    (function(){
+      var card2 = document.createElement('div');
+      card2.className = 'card'; card2.id = 'card-desglose';
+      card2.innerHTML =
+        '<div class="card-header" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">'
+        + '<span class="card-title">🔍 Desglose de mis derivaciones por sala</span></div>'
+        + '<div style="font-size:.78rem;color:#a0aec0;margin-bottom:14px">Detalle de a qué profesional o sala fueron los pacientes que derivé en el período.</div>'
+        + '<div id="desglose-deriv-body"></div>';
+      document.querySelector('.container').appendChild(card2);
     })();
 
     // ── DESTINOS A MEDIR ────────────────────────────────────────────────────
@@ -814,13 +824,133 @@ Papa.parse(CSV_URL, {
       }).join('');
     }
 
-    // Actualizar en cada cambio de filtro
+    // ── DESGLOSE POR SERVICIO ───────────────────────────────────────────────
+    // modo:'subgrupos' → filas fijas predefinidas (ej. Kine/Footscan/Ondas)
+    // modo:'examen'    → agrupa por columna EXAMEN (ej. Rayos, Ortesis, Procedimientos)
+    // modo:'total'     → solo muestra el total, sin desglose (ej. Eco, Imagenología)
+    var _GRUPOS_DESGLOSE = [
+      {icon:'🦵', label:'Kinesiología', modo:'subgrupos',
+       fn:function(r){var s=(r['SALA']||'').toUpperCase();return s.startsWith('KLGA')||s.startsWith('KLGO')||s.indexOf('CRISTOBAL CASTILLO')>=0||s.indexOf('FOOTSCAN')>=0||s.indexOf('ONDAS DE CHOQUE')>=0;},
+       subgrupos:[
+         {label:'Kine',              fn:function(r){var s=(r['SALA']||'').toUpperCase();return s.startsWith('KLGA')||s.startsWith('KLGO')||s.indexOf('CRISTOBAL CASTILLO')>=0;}},
+         {label:'Footscan / Plantillas', fn:function(r){return (r['SALA']||'').toUpperCase().indexOf('FOOTSCAN')>=0;}},
+         {label:'Ondas de choque',   fn:function(r){return (r['SALA']||'').toUpperCase().indexOf('ONDAS DE CHOQUE')>=0;}},
+       ]
+      },
+      {icon:'☢️', label:'Rayos X',        modo:'examen', fn:function(r){return sala(r,'RAYOS');}},
+      {icon:'🔊', label:'Eco',            modo:'total',  fn:function(r){return isEco(r);}},
+      {icon:'🦿', label:'Ortesis',        modo:'examen', fn:function(r){return sala(r,'ORTESIS');}},
+      {icon:'🩺', label:'Procedimientos', modo:'examen', fn:function(r){return (r['SALA']||'').toUpperCase()==='SALA DE PROCEDIMIENTOS';}},
+      {icon:'🔬', label:'Imagenología',   modo:'total',  fn:function(r){return sala(r,'IMAGENOLOGIA');}},
+    ];
+
+    function _formatExamen(ex) {
+      if (!ex) return 'Sin especificar';
+      ex = ex.trim();
+      if (ex.length > 50) ex = ex.slice(0, 48) + '…';
+      return ex.charAt(0).toUpperCase() + ex.slice(1).toLowerCase();
+    }
+
+    function _atribuidoAMi(r, misPac, miHist) {
+      var pid = (r['RUT']||'').trim();
+      if (!pid || !misPac.has(pid)) return false;
+      var deriv = (r['DERIVADOR']||'').trim().toUpperCase();
+      if (deriv && window._MIS_NOMBRES.has(deriv)) return true;
+      var fd = parseFecha(r['FECHA']); if (!fd) return false;
+      var destMs = fd.getTime();
+      var vis = miHist[pid];
+      return !!(vis && vis.some(function(v){ return v<=destMs && v>=destMs-_VENTANA_DR; }));
+    }
+
+    function renderDesgloseDerivaciones() {
+      var body = document.getElementById('desglose-deriv-body');
+      if (!body) return;
+      var misPac = _getMisPacientes();
+      if (misPac.size === 0) {
+        body.innerHTML = '<p style="color:#a0aec0;padding:16px;text-align:center">Sin datos para el período seleccionado</p>';
+        return;
+      }
+      var miHist = _getMiHistorial();
+      var partes = [];
+
+      _GRUPOS_DESGLOSE.forEach(function(grupo) {
+        var derivPac = new Set();
+        var keyPac   = {};
+
+        window._allData.forEach(function(r) {
+          if (!grupo.fn(r)) return;
+          if (!_atribuidoAMi(r, misPac, miHist)) return;
+          var pid = (r['RUT']||'').trim();
+          derivPac.add(pid);
+
+          if (grupo.modo === 'examen') {
+            var ex = _formatExamen(r['EXAMEN']);
+            if (!keyPac[ex]) keyPac[ex] = new Set();
+            keyPac[ex].add(pid);
+          } else if (grupo.modo === 'subgrupos') {
+            grupo.subgrupos.forEach(function(sg){
+              if (sg.fn(r)) {
+                if (!keyPac[sg.label]) keyPac[sg.label] = new Set();
+                keyPac[sg.label].add(pid);
+              }
+            });
+          }
+        });
+
+        var totalGrupo = derivPac.size;
+        if (totalGrupo === 0) return;
+
+        var rowsHtml = '';
+        if (grupo.modo !== 'total') {
+          var entries;
+          if (grupo.modo === 'subgrupos') {
+            entries = grupo.subgrupos.map(function(sg){
+              return {nombre:sg.label, n:(keyPac[sg.label]||new Set()).size};
+            }).filter(function(e){return e.n>0;});
+          } else {
+            entries = Object.keys(keyPac).map(function(k){
+              return {nombre:k, n:keyPac[k].size};
+            }).sort(function(a,b){return b.n-a.n;});
+          }
+          var maxN = entries.length ? Math.max.apply(null, entries.map(function(e){return e.n;})) : 1;
+          rowsHtml = entries.map(function(e) {
+            var barPct = Math.round(e.n / maxN * 100);
+            return '<div class="ds-row">'
+              + '<div class="ds-nombre">' + e.nombre + '</div>'
+              + '<div class="ds-cnt">' + fmtN(e.n) + ' pac.</div>'
+              + '<div class="ds-bwrap"><div class="ds-bbar" style="width:' + barPct + '%"></div></div>'
+              + '</div>';
+          }).join('');
+        }
+
+        partes.push(
+          '<div class="ds-grupo">'
+          + '<div class="ds-ghdr">' + grupo.icon + ' <strong>' + grupo.label + '</strong>'
+          + '<span class="ds-gtotal">' + fmtN(totalGrupo) + ' pac. derivados</span></div>'
+          + rowsHtml + '</div>'
+        );
+      });
+
+      body.innerHTML = partes.length
+        ? partes.join('')
+        : '<p style="color:#a0aec0;padding:16px;text-align:center">Sin derivaciones registradas en el período</p>';
+    }
+
+    // Actualizar ambas secciones en cada cambio de filtro
     ['f-anio','f-mes','f-dia','f-pago'].forEach(function(id) {
-      document.getElementById(id).addEventListener('change', renderMisDerivaciones);
+      document.getElementById(id).addEventListener('change', function() {
+        renderMisDerivaciones();
+        renderDesgloseDerivaciones();
+      });
     });
 
     render();
+    (function(){
+      var hc = document.getElementById('chart-horario');
+      if (hc) { var p=hc.parentNode; while(p && !p.classList.contains('card')) p=p.parentNode; if(p) p.style.display='none'; }
+    })();
     renderMisDerivaciones();
+    renderDesgloseDerivaciones();
     document.getElementById('loading').style.display='none';
     document.getElementById('app').style.display='block';
     document.getElementById('last-update').textContent =
